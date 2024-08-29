@@ -62,11 +62,13 @@
 #define XMODEM_SEND_BYTE(c, dev)	SERIAL_SEND(c, dev)
 #define OS_SLEEP(ms)	usleep(ms*1000)
 static int fd;
+#define MAX_FILE_SIZE 10485760
 #else
 #define XMODEM_DEV_FILE USART1
 #define XMODEM_RECV_BYTE(c, dev)	UART_RECV(c, dev)
 #define XMODEM_SEND_BYTE(c, dev)	UART_SEND(c, dev)
 #define OS_SLEEP(ms)	vTaskDelay(ms / portTICK_PERIOD_MS)
+#define MAX_FILE_SIZE 65536
 #endif
 
 #ifdef PC_SIDE
@@ -351,7 +353,7 @@ int xmodemTransmit(unsigned char *src, int srcsz)
 int main(int argc, char** argv)
 {
 #ifdef PC_SIDE
-	if(argc != 2)
+	if(argc != 3)
 		return 0;
 	XMODEM_DEV_FILE = open(argv[1],O_RDWR | O_NOCTTY | O_NDELAY);
 	if(XMODEM_DEV_FILE == -1)						/* Error Checking */
@@ -394,20 +396,33 @@ int main(int argc, char** argv)
 #endif
 #endif
 	int st;
-	char* data = (char *)calloc(65536, sizeof(uint8_t));
+	char* data = (char *)calloc(MAX_FILE_SIZE, sizeof(uint8_t));
 
 	printf ("Send data using the xmodem protocol from your terminal emulator now...\n");
 	/* the following should be changed for your environment:
 	   0x30000 is the download address,
 	   65536 is the maximum size to be written at this address
 	 */
-	st = xmodemReceive((char *)data, 65536);
+	st = xmodemReceive((unsigned char *)data, MAX_FILE_SIZE);
 	if (st < 0) {
 		printf ("Xmodem receive error: status: %d\n", st);
 	}
 	else {
 		printf ("Xmodem successfully received %d bytes\n", st);
+#ifdef PC_SIDE
+		FILE *fp = fopen(argv[2], "wb");
+		if (fp == NULL) {
+			perror("Error opening file");
+			return 1;
+		}
+		int fsize = st;
+		while(data[fsize - 1] == CTRLZ) fsize--;
+		size_t written = fwrite(data, sizeof(char), fsize, fp);
+		printf("Number of elements written: %zu\n", written);
+		fclose(fp);
+#else
 		printf ("Received: %s\n", data);
+#endif
 	}
 	close(XMODEM_DEV_FILE);/* Close the Serial port */
 	free(data);
@@ -455,15 +470,15 @@ int main(int argc, char** argv)
 #endif
 #endif
 	int st;
-	char* data = (char *)calloc(65536, sizeof(uint8_t));
+	char* data = (char *)calloc(MAX_FILE_SIZE, sizeof(uint8_t));
 	strcpy(data, "Hello World ...\n");
 
-	printf ("Prepare your terminal emulator to receive data now...\n");
+	printf ("Prepare your terminal emulator to send data now...\n");
 	/* the following should be changed for your environment:
 	   0x30000 is the download address,
 	   12000 is the maximum size to be send from this address
 	 */
-	st = xmodemTransmit((char *)data, 12000);
+	st = xmodemTransmit((unsigned char *)data, 12000);
 	if (st < 0) {
 		printf ("Xmodem transmit error: status: %d\n", st);
 	}
